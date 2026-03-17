@@ -2,10 +2,7 @@
 
 > Runtime trust & security layer for multi-agent AI systems
 
-[![CI](https://github.com/yourusername/agentmesh/actions/workflows/ci.yml/badge.svg)](https://github.com/thejainamjain/agentmesh/actions)
-[![Coverage](https://codecov.io/gh/yourusername/agentmesh/branch/main/graph/badge.svg)](https://codecov.io/gh/yourusername/agentmesh)
-[![PyPI](https://img.shields.io/pypi/v/agentmesh.svg)](https://pypi.org/project/agentmesh/)
-[![npm](https://img.shields.io/npm/v/@agentmesh/client.svg)](https://www.npmjs.com/package/@agentmesh/client)
+[![CI](https://github.com/thejainamjain/agentmesh/actions/workflows/ci.yml/badge.svg)](https://github.com/thejainamjain/agentmesh/actions)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 
