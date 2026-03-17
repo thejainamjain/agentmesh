@@ -1,0 +1,187 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ── Lint & type check ───────────────────────────────────────────────────────
+  lint:
+    name: Lint & type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Black (format check)
+        run: black --check agentmesh/ tests/
+
+      - name: mypy (type check)
+        run: mypy agentmesh/
+
+      - name: pylint
+        run: pylint agentmesh/ --fail-under=8.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+          cache-dependency-path: sdk/package-lock.json
+
+      - name: ESLint + TypeScript (SDK)
+        run: |
+          cd sdk && npm ci
+          npm run lint
+          npm run typecheck
+
+      - name: ESLint + TypeScript (dashboard)
+        run: |
+          cd dashboard && npm ci
+          npm run lint
+          npm run typecheck
+
+  # ── Python tests ────────────────────────────────────────────────────────────
+  test-python:
+    name: Python tests (3.${{ matrix.python-minor }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-minor: ["10", "11", "12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.${{ matrix.python-minor }}"
+          cache: pip
+
+      - name: Install dependencies + build C++ extension
+        run: |
+          sudo apt-get install -y pybind11-dev
+          pip install -e ".[dev,langchain,crewai]"
+          python setup.py build_ext --inplace
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ \
+            --cov=agentmesh \
+            --cov-report=xml \
+            --cov-fail-under=85 \
+            -v --tb=short
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-minor == '11'
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+          fail_ci_if_error: true
+
+  # ── JS SDK tests ─────────────────────────────────────────────────────────────
+  test-sdk:
+    name: JS SDK tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+          cache-dependency-path: sdk/package-lock.json
+
+      - name: Install and test
+        run: |
+          cd sdk && npm ci
+          npm test -- --coverage
+
+  # ── Security audit ──────────────────────────────────────────────────────────
+  security:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Python dependency audit
+        run: |
+          pip install pip-audit
+          pip-audit --strict -r requirements.txt || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: npm audit (SDK)
+        run: cd sdk && npm audit --audit-level=high
+
+      - name: npm audit (dashboard)
+        run: cd dashboard && npm audit --audit-level=high
+
+  # ── Red-team injection tests ─────────────────────────────────────────────────
+  test-security:
+    name: Red-team injection tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y pybind11-dev
+          pip install -e ".[dev]"
+          python setup.py build_ext --inplace
+
+      - name: Run injection test suite
+        run: pytest tests/security/ -v --tb=short -s
+
+  # ── Build verification ───────────────────────────────────────────────────────
+  build:
+    name: Build verification
+    runs-on: ubuntu-latest
+    needs: [lint, test-python, test-sdk, security]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install build tools
+        run: |
+          sudo apt-get install -y pybind11-dev
+          pip install build twine
+
+      - name: Build Python package
+        run: python -m build
+
+      - name: Verify package
+        run: twine check dist/*
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Build JS SDK
+        run: cd sdk && npm ci && npm run build
+
+      - name: Build dashboard
+        run: cd dashboard && npm ci && npm run build

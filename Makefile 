@@ -1,0 +1,188 @@
+.PHONY: dev test lint benchmark clean build publish stubs test-integration test-security help
+
+# ── colours ───────────────────────────────────────────────────────────────────
+GREEN  := \033[0;32m
+YELLOW := \033[0;33m
+RED    := \033[0;31m
+RESET  := \033[0m
+
+# ── config ────────────────────────────────────────────────────────────────────
+PYTHON     := python3
+VENV       := .venv
+PIP        := $(VENV)/bin/pip
+PYTEST     := $(VENV)/bin/pytest
+BLACK      := $(VENV)/bin/black
+MYPY       := $(VENV)/bin/mypy
+PYLINT     := $(VENV)/bin/pylint
+COVERAGE   := $(VENV)/bin/coverage
+
+# ── help ──────────────────────────────────────────────────────────────────────
+help:
+	@echo ""
+	@echo "  $(GREEN)AgentMesh — available commands$(RESET)"
+	@echo ""
+	@echo "  $(YELLOW)make dev$(RESET)               Set up full dev environment (run this first)"
+	@echo "  $(YELLOW)make test$(RESET)              Run full test suite with coverage"
+	@echo "  $(YELLOW)make lint$(RESET)              Run Black + mypy + pylint"
+	@echo "  $(YELLOW)make benchmark$(RESET)         Run performance benchmarks"
+	@echo "  $(YELLOW)make test-integration$(RESET)  Run integration tests (requires Docker)"
+	@echo "  $(YELLOW)make test-security$(RESET)     Run red-team injection test suite"
+	@echo "  $(YELLOW)make clean$(RESET)             Remove build artifacts and caches"
+	@echo "  $(YELLOW)make build$(RESET)             Build Python package and C++ extension"
+	@echo "  $(YELLOW)make stubs$(RESET)             Generate mypy stubs for C++ extension"
+	@echo ""
+
+# ── dev setup ─────────────────────────────────────────────────────────────────
+dev: $(VENV)/bin/activate build-ext sdk-install
+	@echo "$(GREEN)Dev environment ready. Run 'make test' to verify.$(RESET)"
+
+$(VENV)/bin/activate:
+	@echo "$(YELLOW)Creating virtual environment...$(RESET)"
+	$(PYTHON) -m venv $(VENV)
+	$(PIP) install --upgrade pip
+	$(PIP) install -e ".[dev,langchain,crewai]"
+	@echo "$(GREEN)Python dependencies installed.$(RESET)"
+
+build-ext:
+	@echo "$(YELLOW)Building C++ extension...$(RESET)"
+	$(VENV)/bin/python setup.py build_ext --inplace
+	@echo "$(GREEN)C++ extension built.$(RESET)"
+
+sdk-install:
+	@echo "$(YELLOW)Installing JS SDK dependencies...$(RESET)"
+	cd sdk && npm install
+	@echo "$(GREEN)JS SDK dependencies installed.$(RESET)"
+
+stubs:
+	@echo "$(YELLOW)Generating mypy stubs for C++ extension...$(RESET)"
+	$(VENV)/bin/python -c "import agentmesh._interceptor; help(agentmesh._interceptor)" || true
+	$(MYPY) --export-types agentmesh/ > /dev/null 2>&1 || true
+	@echo "$(GREEN)Stubs generated.$(RESET)"
+
+# ── testing ───────────────────────────────────────────────────────────────────
+test: $(VENV)/bin/activate
+	@echo "$(YELLOW)Running test suite...$(RESET)"
+	$(PYTEST) tests/unit/ -v --tb=short
+	@echo "$(YELLOW)Running JS SDK tests...$(RESET)"
+	cd sdk && npm test
+	@echo "$(GREEN)All tests passed.$(RESET)"
+
+test-integration:
+	@echo "$(YELLOW)Starting integration test environment...$(RESET)"
+	docker compose -f tests/integration/docker-compose.yml up -d
+	sleep 3
+	$(PYTEST) tests/integration/ -v --tb=short
+	docker compose -f tests/integration/docker-compose.yml down
+	@echo "$(GREEN)Integration tests passed.$(RESET)"
+
+test-security:
+	@echo "$(YELLOW)Running red-team injection test suite...$(RESET)"
+	$(PYTEST) tests/security/ -v --tb=short -s
+	@echo "$(GREEN)Security tests passed.$(RESET)"
+
+test-all: test test-integration test-security
+	@echo "$(GREEN)All test suites passed.$(RESET)"
+
+benchmark:
+	@echo "$(YELLOW)Running performance benchmarks...$(RESET)"
+	$(PYTEST) tests/benchmarks/ -v --benchmark-only \
+		--benchmark-min-rounds=1000 \
+		--benchmark-sort=mean \
+		--benchmark-json=benchmark-results.json
+	@echo "$(GREEN)Benchmark results saved to benchmark-results.json$(RESET)"
+
+# ── linting ───────────────────────────────────────────────────────────────────
+lint: lint-python lint-js
+	@echo "$(GREEN)All lint checks passed.$(RESET)"
+
+lint-python: $(VENV)/bin/activate
+	@echo "$(YELLOW)Running Black (format check)...$(RESET)"
+	$(BLACK) --check agentmesh/ tests/
+	@echo "$(YELLOW)Running mypy (type check)...$(RESET)"
+	$(MYPY) agentmesh/
+	@echo "$(YELLOW)Running pylint...$(RESET)"
+	$(PYLINT) agentmesh/ --fail-under=8.5
+
+lint-js:
+	@echo "$(YELLOW)Running ESLint + TypeScript type check...$(RESET)"
+	cd sdk && npm run lint
+	cd sdk && npm run typecheck
+	cd dashboard && npm run lint
+	cd dashboard && npm run typecheck
+
+format:
+	@echo "$(YELLOW)Formatting Python code...$(RESET)"
+	$(BLACK) agentmesh/ tests/
+	@echo "$(YELLOW)Formatting JS/TS code...$(RESET)"
+	cd sdk && npm run format
+	cd dashboard && npm run format
+	@echo "$(GREEN)Code formatted.$(RESET)"
+
+# ── security scanning ─────────────────────────────────────────────────────────
+audit:
+	@echo "$(YELLOW)Running Python dependency audit...$(RESET)"
+	$(VENV)/bin/pip-audit
+	@echo "$(YELLOW)Running npm audit (SDK)...$(RESET)"
+	cd sdk && npm audit --audit-level=high
+	@echo "$(YELLOW)Running npm audit (dashboard)...$(RESET)"
+	cd dashboard && npm audit --audit-level=high
+	@echo "$(GREEN)Security audit complete.$(RESET)"
+
+# ── build & publish ───────────────────────────────────────────────────────────
+build: clean build-ext
+	@echo "$(YELLOW)Building Python package...$(RESET)"
+	$(VENV)/bin/python -m build
+	@echo "$(YELLOW)Building JS SDK...$(RESET)"
+	cd sdk && npm run build
+	@echo "$(GREEN)Build complete. Artifacts in dist/$(RESET)"
+
+publish-test: build
+	@echo "$(YELLOW)Publishing to TestPyPI...$(RESET)"
+	$(VENV)/bin/twine upload --repository testpypi dist/*
+	@echo "$(YELLOW)Publishing JS SDK to npm (dry run)...$(RESET)"
+	cd sdk && npm publish --dry-run
+
+publish: build
+	@echo "$(RED)Publishing to PyPI and npm — are you sure? [Ctrl+C to cancel]$(RESET)"
+	sleep 3
+	$(VENV)/bin/twine upload dist/*
+	cd sdk && npm publish
+	@echo "$(GREEN)Published.$(RESET)"
+
+# ── coverage report ───────────────────────────────────────────────────────────
+coverage-report:
+	$(COVERAGE) report --show-missing
+	$(COVERAGE) html
+	@echo "$(GREEN)HTML coverage report in htmlcov/index.html$(RESET)"
+
+# ── clean ─────────────────────────────────────────────────────────────────────
+clean:
+	@echo "$(YELLOW)Cleaning build artifacts...$(RESET)"
+	rm -rf build/ dist/ *.egg-info .eggs
+	rm -rf .pytest_cache .mypy_cache .coverage htmlcov coverage.xml
+	rm -rf benchmark-results.json
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -name "*.pyc" -delete
+	find . -name "*.so" -delete
+	find . -name "*.pyd" -delete
+	cd sdk && rm -rf dist/ node_modules/.cache 2>/dev/null || true
+	@echo "$(GREEN)Clean complete.$(RESET)"
+
+# ── ci helpers ────────────────────────────────────────────────────────────────
+# These targets are called by GitHub Actions — keep them fast and explicit
+
+ci-test:
+	$(PYTEST) tests/unit/ \
+		--cov=agentmesh \
+		--cov-report=xml \
+		--cov-fail-under=85 \
+		-v --tb=short --no-header
+
+ci-lint:
+	$(BLACK) --check agentmesh/ tests/
+	$(MYPY) agentmesh/
+	$(PYLINT) agentmesh/ --fail-under=8.5
+
+ci-audit:
+	$(VENV)/bin/pip-audit --strict
+	cd sdk && npm audit --audit-level=high
