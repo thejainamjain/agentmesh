@@ -216,6 +216,44 @@ context: AgentContext = AgentIdentity.verify(token)
 identity.revoke(token)
 ```
 
+## 4.1 — Credential Store
+
+The `CredentialStore` is the single source of truth for registered agent public keys. It was extracted from `agent_identity.py` into its own module (`agentmesh/identity/credential_store.py`) to enforce separation of concerns and allow future backends (e.g. Redis, Vault).
+
+### Responsibilities
+
+| Method | Description |
+|---|---|
+| `register(agent_id, public_key_bytes)` | Called on `AgentIdentity.__init__`. Stores the 32-byte Ed25519 public key. |
+| `lookup(agent_id)` | Called on `AgentIdentity.verify`. Returns public key bytes or `None`. |
+| `deregister(agent_id)` | Called on graceful agent shutdown. Removes key from store. |
+| `is_registered(agent_id)` | Utility — used by the policy engine to confirm an agent exists. |
+
+### Validation on registration
+
+- `agent_id` must not be empty — raises `IdentityError`
+- `public_key_bytes` must be exactly 32 bytes (Ed25519 raw key length) — raises `IdentityError`
+
+### v0.1 implementation
+
+In-memory `dict[str, bytes]`. Keys are lost on process restart — agents must re-register on startup. This is intentional for v0.1: private keys are also ephemeral (never written to disk), so re-registration is always possible.
+
+### Planned backends (v0.3+)
+
+| Backend | Use case |
+|---|---|
+| `redis` | Multi-process deployments — shared key store across processes |
+| `vault` | Production environments requiring key management audit trail |
+
+### Module location
+
+```
+agentmesh/identity/
+├── agent_identity.py      # AgentIdentity, AgentContext — uses CredentialStore
+├── credential_store.py    # CredentialStore — extracted, standalone
+└── exceptions.py          # IdentityError, TokenExpiredError, TokenRevokedError
+```
+
 ---
 
 ## 5. Layer 2a — Policy Engine
