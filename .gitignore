@@ -98,3 +98,5 @@ logs/
 .cache/
 .temp/
 tmp/
+
+agentmesh/monitor/_ext/*.so
