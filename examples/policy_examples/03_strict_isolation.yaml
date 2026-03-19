@@ -1,0 +1,60 @@
+# Example 3: Strict Isolation
+# ────────────────────────────
+# Each agent is completely isolated — no agent can call another's tools,
+# and every potentially dangerous tool is explicitly denied.
+# Use this as a starting point for high-security environments.
+#
+# Security model: whitelist-only with explicit deny for dangerous tools.
+# If a tool isn't in allowed_tools AND is in denied_tools, it is
+# double-blocked — the explicit deny is belt-and-suspenders protection.
+
+version: "1.0"
+
+defaults:
+  deny_on_missing_rule: true
+  deny_on_engine_error: true
+  log_all_denials: true
+
+agents:
+  orchestrator:
+    allowed_tools: []
+    denied_tools:
+      - execute_shell
+      - delete_file
+      - write_file
+    allowed_callers: []
+    can_delegate_to:
+      - data_agent
+      - report_agent
+
+  data_agent:
+    allowed_tools:
+      - read_file
+      - query_database
+    denied_tools:
+      - execute_shell           # Never — even if added to allowed_tools later
+      - delete_file
+      - write_file
+      - web_search              # No external network access
+      - call_llm_api
+    allowed_callers:
+      - orchestrator
+    can_delegate_to: []
+    rate_limits:
+      read_file: 100/hour
+      query_database: 20/minute
+
+  report_agent:
+    allowed_tools:
+      - read_context
+      - write_report            # Can only write to the designated report output
+    denied_tools:
+      - execute_shell
+      - delete_file
+      - write_file              # Cannot write arbitrary files — only write_report
+      - web_search
+    allowed_callers:
+      - orchestrator
+    can_delegate_to: []
+    rate_limits:
+      write_report: 10/hour

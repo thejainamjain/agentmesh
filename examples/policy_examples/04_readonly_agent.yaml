@@ -1,0 +1,61 @@
+# Example 4: Read-Only Agent Pattern
+# ────────────────────────────────────
+# An agent that is strictly read-only — it can query and retrieve
+# information but cannot modify any state anywhere.
+#
+# Use case: compliance scanning agents, audit agents, monitoring agents.
+# Any tool that could modify state is explicitly denied even if it
+# were accidentally added to allowed_tools in the future.
+
+version: "1.0"
+
+defaults:
+  deny_on_missing_rule: true
+  deny_on_engine_error: true
+  log_all_denials: true
+
+agents:
+  compliance_orchestrator:
+    allowed_tools: []
+    allowed_callers: []
+    can_delegate_to:
+      - scanner_agent
+      - audit_reader
+
+  scanner_agent:
+    allowed_tools:
+      - read_file
+      - list_directory
+      - query_database          # SELECT only — enforced at app level too
+      - web_search              # For CVE lookups, threat intel
+    denied_tools:
+      # Explicitly deny ALL write/modify/delete operations
+      - write_file
+      - delete_file
+      - execute_shell
+      - create_directory
+      - modify_database
+      - send_email              # No external communication
+      - call_webhook
+    allowed_callers:
+      - compliance_orchestrator
+    can_delegate_to: []
+    rate_limits:
+      web_search: 30/hour       # Slow — this is a compliance scan, not real-time
+      read_file: 500/hour
+      query_database: 100/hour
+
+  audit_reader:
+    allowed_tools:
+      - read_audit_log
+      - read_file
+    denied_tools:
+      - write_file
+      - delete_file
+      - execute_shell
+      - modify_audit_log        # Audit logs are immutable — never allow modification
+    allowed_callers:
+      - compliance_orchestrator
+    can_delegate_to: []
+    rate_limits:
+      read_audit_log: 10/minute

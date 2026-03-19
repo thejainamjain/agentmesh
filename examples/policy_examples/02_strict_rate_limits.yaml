@@ -1,0 +1,35 @@
+# Example 2: Strict Rate Limiting
+# ─────────────────────────────────
+# Agents that call external APIs (web search, LLM APIs) must be
+# rate-limited to prevent runaway costs or accidental DoS.
+# This policy enforces tight per-tool limits at multiple time scales.
+
+version: "1.0"
+
+defaults:
+  deny_on_missing_rule: true
+  deny_on_engine_error: true
+  log_all_denials: true
+
+agents:
+  orchestrator:
+    allowed_tools: []
+    allowed_callers: []
+    can_delegate_to:
+      - api_agent
+
+  api_agent:
+    allowed_tools:
+      - web_search
+      - call_llm_api
+      - read_file
+    denied_tools:
+      - write_file
+      - execute_shell
+    allowed_callers:
+      - orchestrator
+    can_delegate_to: []
+    rate_limits:
+      web_search: 10/minute     # 10 searches per minute max
+      call_llm_api: 5/minute    # 5 LLM calls per minute — cost control
+      read_file: 30/minute      # Local reads can be more frequent

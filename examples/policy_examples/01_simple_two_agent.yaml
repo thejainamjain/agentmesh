@@ -1,0 +1,32 @@
+# Example 1: Simple Two-Agent Pattern
+# ─────────────────────────────────────
+# The most common AgentMesh setup: one orchestrator, one worker.
+# The orchestrator delegates to the researcher. Neither can call
+# the other's tools. The researcher cannot call anything not listed.
+
+version: "1.0"
+
+defaults:
+  deny_on_missing_rule: true
+  deny_on_engine_error: true
+  log_all_denials: true
+
+agents:
+  orchestrator:
+    allowed_tools: []
+    allowed_callers: []         # Entry point — no caller needed
+    can_delegate_to:
+      - researcher
+
+  researcher:
+    allowed_tools:
+      - web_search
+      - read_file
+    denied_tools:
+      - write_file
+      - execute_shell
+    allowed_callers:
+      - orchestrator            # Only orchestrator can call researcher
+    can_delegate_to: []
+    rate_limits:
+      web_search: 20/minute
