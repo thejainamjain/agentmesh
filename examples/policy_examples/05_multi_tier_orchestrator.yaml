@@ -1,0 +1,81 @@
+# Example 5: Multi-Tier Orchestrator Pattern
+# ────────────────────────────────────────────
+# A realistic production pattern with four agents in two tiers.
+# The top-level orchestrator delegates to a mid-tier planner, which
+# delegates to two specialist workers. No agent can skip tiers.
+#
+# Trust hierarchy:
+#   orchestrator → planner → researcher
+#                          → writer
+#
+# The researcher and writer cannot call each other — they are isolated
+# from each other even though they share the same parent.
+
+version: "1.0"
+
+defaults:
+  deny_on_missing_rule: true
+  deny_on_engine_error: true
+  log_all_denials: true
+
+agents:
+  # ── Tier 1: Entry point ─────────────────────────────────────────────────────
+  orchestrator:
+    allowed_tools: []
+    allowed_callers: []         # Top-level: no caller required
+    can_delegate_to:
+      - planner
+    rate_limits: {}
+
+  # ── Tier 2: Mid-tier coordinator ────────────────────────────────────────────
+  planner:
+    allowed_tools:
+      - read_task_queue         # Can read its work queue
+    denied_tools:
+      - execute_shell
+      - write_file
+      - delete_file
+    allowed_callers:
+      - orchestrator            # Only orchestrator can invoke planner
+    can_delegate_to:
+      - researcher
+      - writer
+    rate_limits:
+      read_task_queue: 60/minute
+
+  # ── Tier 3a: Researcher ──────────────────────────────────────────────────────
+  researcher:
+    allowed_tools:
+      - web_search
+      - read_file
+      - query_knowledge_base
+    denied_tools:
+      - write_file
+      - execute_shell
+      - delete_file
+      - send_email
+    allowed_callers:
+      - planner                 # Only planner can invoke researcher — not orchestrator directly
+    can_delegate_to: []
+    rate_limits:
+      web_search: 15/minute
+      query_knowledge_base: 30/minute
+      read_file: 100/hour
+
+  # ── Tier 3b: Writer ──────────────────────────────────────────────────────────
+  writer:
+    allowed_tools:
+      - read_context
+      - write_draft
+      - write_output
+    denied_tools:
+      - execute_shell
+      - delete_file
+      - web_search              # Writer only works with provided context — no independent research
+      - query_knowledge_base
+    allowed_callers:
+      - planner                 # Only planner can invoke writer — not orchestrator directly
+    can_delegate_to: []
+    rate_limits:
+      write_draft: 20/minute
+      write_output: 5/minute

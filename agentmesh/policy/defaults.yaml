@@ -1,0 +1,62 @@
+# AgentMesh Default Policy
+# ─────────────────────────────────────────────────────────────────────────────
+# This is the baseline policy loaded when no custom policy is provided.
+# It defines a two-agent pattern (orchestrator + researcher) with conservative
+# rate limits and explicit tool restrictions.
+#
+# Copy and customise this file for your own agents.
+# Reference: agentmesh/policy/schema.py for full field documentation.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "1.0"
+
+defaults:
+  deny_on_missing_rule: true    # NEVER set to false — AgentMesh always denies unknown calls
+  deny_on_engine_error: true    # NEVER set to false — fail secure on engine errors
+  log_all_denials: true         # All denials recorded in the audit trail
+
+agents:
+  # ── Orchestrator ────────────────────────────────────────────────────────────
+  # Top-level agent. Delegates to sub-agents — does not call tools directly.
+  # allowed_callers is empty because the orchestrator is the entry point.
+  orchestrator:
+    allowed_tools: []           # Orchestrator delegates — no direct tool calls
+    denied_tools: []
+    allowed_callers: []         # Top-level: no caller required
+    can_delegate_to:
+      - researcher
+      - summarizer
+    rate_limits: {}
+
+  # ── Researcher ───────────────────────────────────────────────────────────────
+  # Performs information retrieval. Only the orchestrator can invoke it.
+  # Rate-limited to prevent runaway tool calls.
+  researcher:
+    allowed_tools:
+      - web_search
+      - read_file
+    denied_tools:
+      - write_file              # Researcher must not write — read-only access
+      - execute_shell           # Shell access never permitted for researcher
+      - delete_file
+    allowed_callers:
+      - orchestrator            # Only orchestrator can invoke researcher
+    can_delegate_to: []         # Researcher cannot delegate further
+    rate_limits:
+      web_search: 10/minute
+      read_file: 50/minute
+
+  # ── Summarizer ───────────────────────────────────────────────────────────────
+  # Produces final output. Only the orchestrator can invoke it.
+  summarizer:
+    allowed_tools:
+      - read_context
+      - write_output
+    denied_tools:
+      - execute_shell
+      - delete_file
+    allowed_callers:
+      - orchestrator
+    can_delegate_to: []
+    rate_limits:
+      write_output: 5/minute
