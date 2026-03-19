@@ -1,0 +1,67 @@
+{
+    "name": "@agentmesh/client",
+    "version": "0.1.0",
+    "description": "JavaScript/TypeScript SDK for AgentMesh — runtime trust and security layer for multi-agent AI systems",
+    "main": "dist/index.js",
+    "module": "dist/index.mjs",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "build": "tsc",
+        "test": "jest",
+        "test:coverage": "jest --coverage",
+        "lint": "tsc --noEmit",
+        "clean": "rm -rf dist"
+    },
+    "keywords": [
+        "agentmesh",
+        "ai-security",
+        "multi-agent",
+        "llm",
+        "security",
+        "prompt-injection",
+        "ai-agents"
+    ],
+    "author": "AgentMesh Contributors",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/thejainamjain/agentmesh"
+    },
+    "bugs": {
+        "url": "https://github.com/thejainamjain/agentmesh/issues"
+    },
+    "homepage": "https://github.com/thejainamjain/agentmesh#readme",
+    "devDependencies": {
+        "@types/jest": "^29.5.0",
+        "@types/node": "^20.0.0",
+        "jest": "^29.5.0",
+        "ts-jest": "^29.1.0",
+        "typescript": "^5.0.0"
+    },
+    "jest": {
+        "preset": "ts-jest",
+        "testEnvironment": "node",
+        "testMatch": [
+            "**/tests/**/*.test.ts"
+        ],
+        "moduleNameMapper": {
+            "^(.*)\\.js$": "$1"
+        },
+        "collectCoverageFrom": [
+            "src/**/*.ts"
+        ],
+        "coverageThreshold": {
+            "global": {
+                "lines": 80
+            }
+        }
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
