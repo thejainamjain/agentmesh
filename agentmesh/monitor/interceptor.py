@@ -7,14 +7,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agentmesh.identity.agent_identity import AgentIdentity
-from agentmesh.identity.exceptions import (
-    AgentMeshError,
-    IdentityError,
-    TokenExpiredError,
-    TokenRevokedError,
-)
+from agentmesh.identity.exceptions import AgentMeshError
+from agentmesh.monitor.anomaly_detector import AnomalyDetector
 from agentmesh.monitor.captured_call import CapturedCall
 from agentmesh.monitor.exceptions import InterceptorError, PolicyDenied
+from agentmesh.monitor.injection_detector import InjectionDetector, Severity
 from agentmesh.policy.engine import Decision, PolicyEngine
 from agentmesh.policy.exceptions import PolicyLoadError
 
@@ -66,27 +63,72 @@ def _evaluate_policy(
     engine: PolicyEngine | None,
     caller_id: str | None,
 ) -> None:
-    """
-    Evaluate the policy engine for a captured call.
-
-    If engine is None, the call is allowed — backward compatible with
-    Week 3 tests that don't pass a policy engine.
-
-    Raises PolicyDenied if the decision is DENY or RATE_LIMITED.
-    Updates captured.policy_decision for the audit trail.
-    """
+    """Evaluate policy — raises PolicyDenied if blocked."""
     if engine is None:
-        return  # no policy configured — allow by default
-
+        return
     decision = engine.evaluate(
         agent_id=captured.agent_id,
         tool_name=captured.tool_name,
         caller_id=caller_id,
     )
-
     if decision.decision in (Decision.DENY, Decision.RATE_LIMITED):
         captured.block(decision.reason)
         raise PolicyDenied(decision.reason)
+
+
+def _evaluate_behavior(
+    captured: CapturedCall,
+    injection_detector: InjectionDetector | None,
+    anomaly_detector: AnomalyDetector | None,
+) -> None:
+    """
+    Run behavior checks — injection detection and anomaly detection.
+
+    Injection detection runs first (faster, pattern-based).
+    Anomaly detection runs second (statistical, needs warm-up period).
+
+    Raises PolicyDenied if either detector blocks the call.
+    Adds monitor flags to captured for the audit trail.
+    """
+    # ── Injection detection ───────────────────────────────────────────────────
+    if injection_detector is not None:
+        result = injection_detector.inspect(captured.arguments)
+        if not result.safe:
+            captured.block(result.reason)
+            if hasattr(captured, 'monitor_flags'):
+                captured.monitor_flags.extend(result.flags)
+            logger.warning(
+                "AgentMesh: injection detected — agent=%r tool=%r reason=%r",
+                captured.agent_id, captured.tool_name, result.reason,
+            )
+            raise PolicyDenied(f"Injection detected: {result.reason}")
+        elif result.matches:
+            # Warned but not blocked — add flags for audit trail
+            if hasattr(captured, 'monitor_flags'):
+                captured.monitor_flags.extend(result.flags)
+            logger.warning(
+                "AgentMesh: injection warning — agent=%r tool=%r flags=%s",
+                captured.agent_id, captured.tool_name, result.flags,
+            )
+
+    # ── Anomaly detection ─────────────────────────────────────────────────────
+    if anomaly_detector is not None:
+        anomaly = anomaly_detector.record_and_check(
+            agent_id=captured.agent_id,
+            tool_name=captured.tool_name,
+            arguments=captured.arguments,
+        )
+        if anomaly.anomalous:
+            flag = f"anomaly:{anomaly.metric}:z={anomaly.z_score:.1f}"
+            if hasattr(captured, 'monitor_flags'):
+                captured.monitor_flags.append(flag)
+            logger.warning(
+                "AgentMesh: anomaly detected — agent=%r tool=%r reason=%r",
+                captured.agent_id, captured.tool_name, anomaly.reason,
+            )
+            # Anomalies are HIGH severity — block the call
+            captured.block(anomaly.reason)
+            raise PolicyDenied(f"Anomaly detected: {anomaly.reason}")
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +139,8 @@ def intercept_tools(
     identity: AgentIdentity,
     policy: "PolicyEngine | str | Path | None" = None,
     caller_id: str | None = None,
+    injection_detector: InjectionDetector | None = None,
+    anomaly_detector: AnomalyDetector | None = None,
 ) -> Callable:
     """
     Decorator that wraps a tool function with the AgentMesh interceptor.
@@ -105,20 +149,22 @@ def intercept_tools(
       1. Verify the agent JWT identity
       2. Capture: caller identity, tool name, arguments, timestamp
       3. Evaluate the policy engine (if configured)
-      4. Allow or block execution
-      5. Execute the tool
-      6. Record the result
+      4. Run injection detection (if configured)
+      5. Run anomaly detection (if configured)
+      6. Execute the tool
+      7. Record the result
 
     Args:
-        identity:  AgentIdentity for the agent owning this tool.
-        policy:    PolicyEngine instance, path to a YAML file, or None.
-                   None = no policy check (Week 3 backward compatible).
-        caller_id: ID of the agent invoking this one (for allowed_callers).
+        identity:           AgentIdentity for the agent owning this tool.
+        policy:             PolicyEngine, path to YAML, or None.
+        caller_id:          ID of the agent invoking this one.
+        injection_detector: InjectionDetector instance, or None to skip.
+        anomaly_detector:   AnomalyDetector instance, or None to skip.
 
     Raises:
-        InterceptorError: Bad identity type, or policy file load failure.
+        InterceptorError: Bad identity type or policy file load failure.
         IdentityError / TokenExpiredError / TokenRevokedError: JWT failures.
-        PolicyDenied: Policy engine blocked the call.
+        PolicyDenied: Policy, injection, or anomaly check blocked the call.
     """
     if not isinstance(identity, AgentIdentity):
         raise InterceptorError(
@@ -126,7 +172,7 @@ def intercept_tools(
             f"got {type(identity).__name__!r}"
         )
 
-    # Resolve policy engine at decoration time — fail fast if file is bad
+    # Resolve policy engine at decoration time
     engine: PolicyEngine | None = None
     if policy is not None:
         if isinstance(policy, (str, Path)):
@@ -177,10 +223,13 @@ def intercept_tools(
                 ctx.agent_id, tool_name, captured.arguments_hash[:8],
             )
 
-            # 4 — Policy evaluation (raises PolicyDenied if blocked)
+            # 4 — Policy evaluation
             _evaluate_policy(captured, engine, caller_id)
 
-            # 5 — Execute
+            # 5 — Behavior checks (injection + anomaly)
+            _evaluate_behavior(captured, injection_detector, anomaly_detector)
+
+            # 6 — Execute
             try:
                 result = func(*args, **kwargs)
             except Exception as exc:
@@ -190,7 +239,7 @@ def intercept_tools(
                 )
                 raise
 
-            # 6 — Record result
+            # 7 — Record result
             captured.record_result(result)
 
             logger.debug(
