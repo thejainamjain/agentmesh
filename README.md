@@ -1,239 +1,201 @@
-# AgentMesh
+# 🛡️ AgentMesh
 
-> Runtime trust & security layer for multi-agent AI systems
+**Runtime trust and security layer for multi-agent AI systems.**
+
+AgentMesh solves the problem no existing tool addresses: securing how AI agents communicate with, trust, and delegate to each other. Every inter-agent call is verified, every tool call is policy-checked, every action is cryptographically recorded.
 
 [![CI](https://github.com/thejainamjain/agentmesh/actions/workflows/ci.yml/badge.svg)](https://github.com/thejainamjain/agentmesh/actions)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)](https://github.com/thejainamjain/agentmesh)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
 
 ---
 
-## The problem
+## Why AgentMesh?
 
-When AI agents collaborate — an orchestrator delegating tasks to sub-agents — there is no standard way to answer three questions:
-
-- **Who is calling?** Is this message actually from the trusted orchestrator, or an impersonator?
-- **Is this allowed?** Is this agent permitted to call this tool at all?
-- **What happened?** Can I prove exactly what every agent did, in order, without trusting the logs?
-
-Existing tools (Sage, Aegis, LangSmith) protect a single agent from its OS or provide observability after the fact. None of them secure the boundaries *between* agents.
-
-AgentMesh fills that gap.
+| Tool | What it does | What it misses |
+|---|---|---|
+| Sage / Aegis | Single-agent OS firewall | Cannot secure agent-to-agent calls |
+| LangSmith | Observability / tracing | No enforcement, no identity, no policy |
+| OpenTelemetry | General telemetry | Not agent-aware, no security layer |
+| **AgentMesh** | **Multi-agent runtime trust** | **This is what we build** |
 
 ---
 
-## What AgentMesh does
+## 5-Minute Quickstart (LangChain)
 
-AgentMesh wraps any multi-agent system with four security layers:
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  AgentMesh Runtime                  │
-│                                                     │
-│  ┌──────────────────────────────────────────────┐   │
-│  │  Identity — Ed25519 JWT on every agent call  │   │
-│  └──────────────────────────────────────────────┘   │
-│  ┌─────────────────┐  ┌───────────────────────────┐ │
-│  │  Policy Engine  │  │    Behavior Monitor       │ │
-│  │  YAML · Deny    │  │  Injection · Anomaly      │ │
-│  └─────────────────┘  └───────────────────────────┘ │
-│  ┌──────────────────────────────────────────────┐   │
-│  │  Audit Trail — signed · chained · tamper-    │   │
-│  │  evident                                     │   │
-│  └──────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-```
-
-| Layer | What it does |
-|---|---|
-| **Identity** | Every agent gets an Ed25519 signed JWT. Verified on every inter-agent call. |
-| **Policy engine** | YAML rules define exactly what each agent can do. Default-deny — no rule = blocked. |
-| **Behavior monitor** | Scans every tool call for prompt injection. Detects anomalous agent behavior. |
-| **Audit trail** | Ed25519 signed + SHA-256 chained log of every action. Tamper-evident. |
-
----
-
-## Quickstart
-
-**Install:**
+### 1. Install
 
 ```bash
 pip install agentmesh
 ```
 
-**Secure an agent in 3 lines:**
-
-```python
-from agentmesh import secure_agent
-from agentmesh.identity import AgentIdentity
-
-identity = AgentIdentity(agent_id="researcher", capabilities=["web_search", "read_file"])
-
-@secure_agent(identity=identity, policy="./policy.yaml")
-class ResearchAgent(YourBaseAgent):
-    # Your existing code — unchanged
-    ...
-```
-
-**Write a policy file:**
+### 2. Create a policy file
 
 ```yaml
 # policy.yaml
 version: "1.0"
-
 agents:
+  orchestrator:
+    allowed_tools: []
+    allowed_callers: []
+    can_delegate_to: [researcher]
   researcher:
     allowed_tools: [web_search, read_file]
     denied_tools: [execute_shell, write_file]
     allowed_callers: [orchestrator]
     rate_limits:
-      web_search: "10/minute"
+      web_search: 10/minute
 ```
 
-**That's it.** Every tool call `ResearchAgent` makes is now:
-- verified against the caller's identity
-- checked against your policy before execution
-- scanned for prompt injection attempts
-- recorded in a tamper-evident audit trail
-
-**With LangChain:**
+### 3. Secure your LangChain agent
 
 ```python
-from agentmesh.integrations.langchain import secure_langchain_agent
+from agentmesh.identity import AgentIdentity
+from agentmesh.monitor import intercept_tools
+from agentmesh.policy import PolicyEngine
+from agentmesh.audit import AuditTrail
 
-agent = secure_langchain_agent(
-    agent=your_langchain_agent,
+# Create cryptographic identity
+identity = AgentIdentity(
     agent_id="researcher",
-    policy="./policy.yaml"
+    capabilities=["web_search"],
 )
+
+# Load policy
+engine = PolicyEngine.from_file("policy.yaml")
+
+# Secure your tool — one decorator
+@intercept_tools(identity=identity, policy=engine, caller_id="orchestrator")
+def web_search(query: str) -> str:
+    # Your existing tool implementation — unchanged
+    return search_the_web(query)
+
+# Record everything
+trail = AuditTrail(identity=identity)
+
+# Use it — AgentMesh checks identity + policy before every call
+result = web_search(query="AI security 2026")
+trail.record_tool_call(tool_name="web_search", arguments={"query": "AI security 2026"})
 ```
 
-**With CrewAI:**
-
-```python
-from agentmesh.integrations.crewai import secure_crew
-
-crew = secure_crew(
-    crew=your_crew,
-    policy="./policy.yaml"
-)
-```
-
-**JavaScript / TypeScript:**
+### 4. Start the API server (for JS SDK + dashboard)
 
 ```bash
-npm install @agentmesh/client
+# Generate a secret key first
+python -c "import secrets; print(secrets.token_hex(32))"
+
+# Set it in your environment
+export AGENTMESH_SECRET_KEY=<your-generated-key>
+
+# Start the server
+python -m agentmesh.api.server --policy policy.yaml --port 8000
 ```
 
-```typescript
-import { AgentMesh } from '@agentmesh/client';
+### 5. Verify it's working
 
-const mesh = new AgentMesh({ policyPath: './policy.yaml' });
-const agent = mesh.registerAgent('researcher', ['web_search']);
-await agent.callTool('web_search', { query: 'AI security 2026' });
+```bash
+curl http://localhost:8000/health
+# {"status":"ok","version":"0.1.0","policy_loaded":true,"registered_agents":["researcher","orchestrator"]}
 ```
 
 ---
 
-## Why not existing tools?
-
-| | AgentMesh | Sage / Aegis | LangSmith | OpenTelemetry |
-|---|---|---|---|---|
-| Agent-to-agent trust | ✅ | ❌ | ❌ | ❌ |
-| Default-deny policy | ✅ | ❌ | ❌ | ❌ |
-| Prompt injection detection | ✅ | Partial | ❌ | ❌ |
-| Tamper-evident audit | ✅ | ❌ | ❌ | ❌ |
-| Works with LangChain | ✅ | ✅ | ✅ | ✅ |
-| Open source | ✅ | ✅ | ❌ | ✅ |
-
----
-
-## Threat coverage
-
-AgentMesh is built against a published threat model. v0.1.0 addresses:
-
-| Threat | Severity | Status |
-|---|---|---|
-| Agent impersonation | 🔴 Critical | Mitigated — Identity layer |
-| Unauthorized capability escalation | 🔴 Critical | Mitigated — Policy engine |
-| Prompt injection hijacking | 🔴 Critical | Partially mitigated — Behavior monitor |
-| Compromised agent behavior | 🟠 High | Partially mitigated — Anomaly detector |
-| Audit log tampering | 🟠 High | Mitigated — Audit trail |
-| JWT token replay | 🟠 High | Mitigated — jti revocation |
-| Malicious MCP server injection | 🔴 Critical | Partially mitigated — v0.2.0 full fix |
-
-Full details: [`docs/security/THREAT_MODEL.md`](./docs/security/THREAT_MODEL.md)
-
----
-
-## Performance
-
-The AgentMesh interceptor sits on the hot path. Benchmarked at p95:
-
-| Operation | Target | Status |
-|---|---|---|
-| JWT verification | < 0.5ms | ✅ |
-| Policy evaluation | < 1ms | ✅ |
-| Injection scan (1,000 chars) | < 2ms | ✅ |
-| **Total overhead per call** | **< 5ms** | ✅ |
-
-Most LLM tool calls take 100ms–10,000ms. The security overhead is less than 5% of the fastest tool call.
-
----
-
-## Project structure
+## Architecture
 
 ```
-agentmesh/           Python core library
-  identity/          Layer 1 — JWT issuance and verification
-  policy/            Layer 2a — YAML policy engine
-  monitor/           Layer 2b — Injection and anomaly detection
-    patterns/        Injection pattern YAML (community-contributed)
-  audit/             Layer 3 — Tamper-evident audit trail
-sdk/                 TypeScript SDK (@agentmesh/client)
-dashboard/           Next.js real-time dashboard
-integrations/        LangChain, CrewAI adapters
-examples/            Working code examples
-docs/security/       Threat model, security policy
+┌─────────────────────────────────────────────────────┐
+│               AgentMesh Runtime                     │
+│                                                     │
+│  ┌───────────────────────────────────────────────┐  │
+│  │  Layer 1: Identity — Ed25519 JWT per agent    │  │
+│  └───────────────────────────────────────────────┘  │
+│  ┌──────────────────┐  ┌──────────────────────────┐ │
+│  │ Layer 2a: Policy │  │ Layer 2b: Behavior       │ │
+│  │ YAML · deny-all  │  │ Injection · Anomaly      │ │
+│  └──────────────────┘  └──────────────────────────┘ │
+│  ┌───────────────────────────────────────────────┐  │
+│  │  Layer 3: Audit — Ed25519 signed · SHA-256    │  │
+│  └───────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+         ↑            ↑            ↑
+      Agent A      Agent B      Agent C
+```
+
+**Four security layers, applied in order on every tool call:**
+
+1. **Identity** — Ed25519 keypairs, JWT tokens, revocation
+2. **Policy** — YAML rules, default-deny, rate limiting
+3. **Behavior Monitor** — 33 injection patterns, Z-score anomaly detection
+4. **Audit Trail** — SHA-256 hash chain, Ed25519 signed, tamper-evident
+
+---
+
+## Security Features
+
+- **Default deny** — no rule = blocked. Always.
+- **Prompt injection detection** — 33 patterns across 9 OWASP 2025 attack categories
+- **Base64 decode + scan** — catches encoded payloads
+- **Typoglycemia resistance** — catches scrambled keyword attacks
+- **Immutable audit trail** — tamper with any entry and `verify_chain()` detects it
+- **Credential protection** — arguments are never stored, only their SHA-256 hash
+- **Rate limiting** — per-agent, per-tool rolling window counters
+- **Fail secure** — policy server unreachable = deny. Audit write fails = deny.
+
+---
+
+## What AgentMesh Protects Against
+
+Based on [OWASP LLM Top 10 2025](https://owasp.org/www-project-top-10-for-large-language-model-applications/):
+
+| Attack | Protection |
+|---|---|
+| Agent impersonation | Ed25519 JWT verified on every call |
+| Unauthorized tool access | Policy engine default-deny |
+| Prompt injection (33 variants) | InjectionDetector pattern library |
+| DAN / jailbreak | Role hijack patterns |
+| Credential theft | Denied tool patterns + argument hashing |
+| Data exfiltration | Exfiltration pattern detection |
+| Replay attacks | JWT `jti` revocation list |
+| Audit tampering | SHA-256 hash chain + Ed25519 signatures |
+
+---
+
+## Installation
+
+```bash
+pip install agentmesh
+
+# Optional: API server dependencies
+pip install agentmesh[server]  # FastAPI + uvicorn
+
+# Optional: dashboard
+cd dashboard && npm install && npm run dev
 ```
 
 ---
 
 ## Documentation
 
-- [Architecture](./ARCHITECTURE.md) — system design and implementation spec
-- [Threat model](./docs/security/THREAT_MODEL.md) — attacks and mitigations
-- [Roadmap](./ROADMAP.md) — what is coming and when
-- [Contributing](./CONTRIBUTING.md) — how to contribute
-- [Examples](./examples/) — working code for common use cases
+- [ARCHITECTURE.md](ARCHITECTURE.md) — deep technical design
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute
+- [ROADMAP.md](ROADMAP.md) — what's coming next
+- [CHANGELOG.md](CHANGELOG.md) — version history
 
 ---
 
 ## Contributing
 
-AgentMesh is built in the open and contributions are welcome. The easiest place to start is adding a new injection detection pattern — no C++ knowledge required, and it directly improves security for everyone using AgentMesh.
+AgentMesh is open source under Apache 2.0. Contributions are welcome.
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup instructions, code standards, and the PR process.
+The easiest way to contribute is to add new injection patterns to
+`agentmesh/monitor/patterns/injection_patterns.yaml` — each pattern is a self-contained
+PR that makes AgentMesh more secure for everyone.
 
-Good first issues are labeled [`good first issue`](https://github.com/yourusername/agentmesh/labels/good%20first%20issue).
-
----
-
-## Roadmap
-
-- **v0.1.0** — Identity, policy engine, behavior monitor, audit trail, LangChain + CrewAI adapters *(in progress)*
-- **v0.2.0** — MCP response scanning, sequence anomaly detection, JWT source binding
-- **v0.3.0** — Semantic injection classifier, policy hot reload, OpenTelemetry export
-- **v1.0.0** — Stable API, formal security audit, enterprise policy templates
-
-Full roadmap: [ROADMAP.md](./ROADMAP.md)
+See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
 ---
 
 ## License
 
-Apache 2.0 — see [LICENSE](./LICENSE).
-
----
-
-*AgentMesh is pre-release software. The core architecture is stable but APIs may change before v1.0.0. See [ARCHITECTURE.md §13](./ARCHITECTURE.md#13-versioning--compatibility) for the stability guarantees per component.*
+Apache 2.0 — see [LICENSE](LICENSE).

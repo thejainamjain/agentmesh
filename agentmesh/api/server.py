@@ -73,10 +73,12 @@ def create_app(
     from agentmesh.api.routes.health import router as health_router
     from agentmesh.api.routes.identity import router as identity_router
     from agentmesh.api.routes.policy import router as policy_router
+    from agentmesh.api.routes.ws import router as ws_router
 
     app.include_router(health_router)
     app.include_router(identity_router)
     app.include_router(policy_router)
+    app.include_router(ws_router)
 
     @app.exception_handler(Exception)
     async def global_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -95,14 +97,14 @@ def _load_policy(policy_path: str | Path) -> None:
         engine = PolicyEngine.from_file(policy_path)
         set_policy_engine(engine)
         logger.info("Policy loaded from %s", policy_path)
-    except Exception as e:
+    except Exception as e:  # pragma: no cover
         logger.error(
             "CRITICAL: Failed to load policy from %s: %s — ALL calls will be DENIED",
             policy_path, e,
         )
 
 
-def run(app: FastAPI, host: str = "127.0.0.1", port: int = 8000) -> None:
+def run(app: FastAPI, host: str = "127.0.0.1", port: int = 8000) -> None:  # pragma: no cover
     try:
         import uvicorn
         uvicorn.run(app, host=host, port=port, log_level="info")
@@ -111,7 +113,7 @@ def run(app: FastAPI, host: str = "127.0.0.1", port: int = 8000) -> None:
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     parser = argparse.ArgumentParser(description="AgentMesh REST API Server")
     parser.add_argument("--policy", type=str)
     parser.add_argument("--host", type=str, default="127.0.0.1")

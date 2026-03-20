@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3e;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --allow: #22c55e;
+    --deny: #ef4444;
+    --warn: #f59e0b;
+    --info: #3b82f6;
+}
+
+body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
