@@ -34,19 +34,22 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Install C++ build tools
-        run: sudo apt-get install -y cmake pybind11-dev
+        run: sudo apt-get install -y cmake libpython3-dev pybind11-dev libssl-dev
 
       - name: Build C++ extension
         run: |
           cd agentmesh/monitor/_ext
-          mkdir build && cd build
-          cmake .. && cmake --build .
-          cp interceptor_core*.so ../
+          mkdir -p build && cd build
+          cmake .. -DPYTHON_EXECUTABLE=$(python -c "import sys; print(sys.executable)")
+          cmake --build . --verbose
+          # Copy whatever .so was produced (name varies by Python version and platform)
+          find . -name "interceptor_core*.so" -exec cp {} ../ \;
+          ls -la ../interceptor_core*.so
 
       - name: Run tests with coverage
         run: pytest tests/ -v --cov=agentmesh --cov-report=xml --cov-fail-under=85
         env:
-          AGENTMESH_SECRET_KEY: test_secret_key_for_ci_only
+          AGENTMESH_SECRET_KEY: ci_test_secret_key_not_real
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
