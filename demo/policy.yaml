@@ -1,0 +1,67 @@
+version: "1.0"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AgentMesh Demo Policy — 3-Agent Research Pipeline
+#
+# Agents:
+#   orchestrator  → delegates work, never touches tools directly
+#   researcher    → web search + file read only, rate limited
+#   summarizer    → read context + write output only
+#
+# Every call not listed here is BLOCKED by default.
+# ─────────────────────────────────────────────────────────────────────────────
+
+defaults:
+  deny_on_missing_rule: true
+  deny_on_engine_error: true
+  log_all_denials: true
+
+agents:
+
+  # ── Orchestrator ────────────────────────────────────────────────────────────
+  # Entry point. Delegates only. Cannot call any tool directly.
+  orchestrator:
+    allowed_tools: []
+    denied_tools: []
+    allowed_callers: []
+    can_delegate_to:
+      - researcher
+      - summarizer
+    rate_limits: {}
+
+  # ── Researcher ───────────────────────────────────────────────────────────────
+  # Fetches information. Read-only. Rate limited.
+  # Can only be called by the orchestrator.
+  researcher:
+    allowed_tools:
+      - web_search
+      - read_file
+    denied_tools:
+      - write_file
+      - delete_file
+      - execute_shell
+      - send_email
+    allowed_callers:
+      - orchestrator
+    can_delegate_to: []
+    rate_limits:
+      web_search: 20/minute
+      read_file: 50/minute
+
+  # ── Summarizer ───────────────────────────────────────────────────────────────
+  # Produces final output. Can only be called by the orchestrator.
+  # Cannot search or read files — only works with passed context.
+  summarizer:
+    allowed_tools:
+      - write_summary
+    denied_tools:
+      - web_search
+      - read_file
+      - delete_file
+      - execute_shell
+      - send_email
+    allowed_callers:
+      - orchestrator
+    can_delegate_to: []
+    rate_limits:
+      write_summary: 10/minute

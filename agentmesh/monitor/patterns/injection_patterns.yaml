@@ -1,27 +1,7 @@
 # AgentMesh Injection Pattern Library
 # ─────────────────────────────────────────────────────────────────────────────
 # This file is the single source of truth for prompt injection detection.
-# It is designed to be community-contributed — submit PRs to add new patterns.
-#
-# Schema per pattern:
-#   id:          Unique identifier (snake_case)
-#   pattern:     Regex pattern (case-insensitive by default)
-#   severity:    critical | high | medium | low
-#   category:    instruction_override | role_hijack | system_leak |
-#                tool_manipulation | encoding | delimiter |
-#                credential_theft | data_exfiltration | jailbreak
-#   description: Human-readable explanation of what this detects
-#   references:  CVE, OWASP, or research paper references
-#
-# Severity definitions:
-#   critical: Single match = immediate block. No exceptions.
-#   high:     Single match = block. Very low false-positive rate.
-#   medium:   Two or more matches of any severity = block.
-#             One medium match alone = warn + log.
-#   low:      Informational. Logged but never blocks alone.
-#
-# IMPORTANT: Patterns are regex strings. Escape special characters.
-# All patterns are matched case-insensitively against the full argument string.
+# Community-contributed — submit PRs to add new patterns.
 # ─────────────────────────────────────────────────────────────────────────────
 
 version: "1.0"
@@ -216,10 +196,10 @@ patterns:
     references: [OWASP-LLM06-2025]
 
   - id: cred_env_variables
-    pattern: "environment\\s+variables?|os\\.environ|\\.env\\s+file|env\\s+vars?"
+    pattern: "(print|dump|show|output|display|list|reveal|expose|read|get|return|give me|share).{0,30}(environment\\s+variables?|env\\s+vars?|os\\.environ|\\.env\\s+file)"
     severity: critical
     category: credential_theft
-    description: Attempts to dump environment variables which may contain secrets.
+    description: Attempts to dump/reveal environment variables which may contain API keys and secrets.
     references: [OWASP-LLM06-2025]
 
   # ── Category: data_exfiltration ───────────────────────────────────────────
@@ -233,7 +213,7 @@ patterns:
     references: [OWASP-LLM02-2025]
 
   - id: exfil_webhook
-    pattern: "(post|send|forward|relay|transmit|upload).{0,20}(webhook|to\\s+remote|to\\s+endpoint|to\\s+server|to\\s+url)"
+    pattern: "(post|send|forward|relay|transmit|upload).{0,50}(webhook|to\\s+(remote|endpoint|server|url|attacker))"
     severity: high
     category: data_exfiltration
     description: Webhook-based data exfiltration attempt.
@@ -285,4 +265,11 @@ patterns:
     severity: medium
     category: delimiter
     description: Triple-hash delimiter often used in prompt templates — injection attempt.
+    references: [OWASP-LLM01-2025]
+
+  - id: false_authority_admin
+    pattern: "\\[(system\\s+admin(istrator)?|authorized\\s+override|root\\s+access|admin\\s+mode)\\]"
+    severity: critical
+    category: instruction_override
+    description: False authority injection — bracket-wrapped fake admin or authorized override claim used to bypass safety guidelines.
     references: [OWASP-LLM01-2025]
