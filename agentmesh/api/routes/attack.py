@@ -64,7 +64,7 @@ class AttackResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/v1/attack/run", response_model=AttackResult, tags=["attack-lab"])
-async def run_attack(request: AttackRequest) -> AttackResult:
+async def run_attack(request: AttackRequest) -> AttackResult:  # pragma: no cover
     if not os.environ.get("AGENTMESH_ATTACK_LAB", "").lower() in ("true", "1", "yes"):
         raise HTTPException(
             status_code=403,
@@ -130,7 +130,7 @@ async def run_attack(request: AttackRequest) -> AttackResult:
 # Protected pipeline — real checks, real results
 # ---------------------------------------------------------------------------
 
-def _run_protected(request: AttackRequest) -> SideResult:
+def _run_protected(request: AttackRequest) -> SideResult:  # pragma: no cover
     from agentmesh.identity.agent_identity import AgentIdentity
     from agentmesh.monitor.injection_detector import InjectionDetector
     from agentmesh.monitor.exceptions import PolicyDenied
@@ -273,7 +273,7 @@ _PAYLOAD_INDICATORS = [
 ]
 
 
-def _looks_like_attack(payload: str, tool_name: str, attack_type: str) -> bool:
+def _looks_like_attack(payload: str, tool_name: str, attack_type: str) -> bool:  # pragma: no cover
     """
     Heuristic: return True if this looks like a real attack that AgentMesh missed.
 

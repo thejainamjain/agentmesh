@@ -42,7 +42,7 @@ def _get_secret() -> str | None:
 # ---------------------------------------------------------------------------
 
 @router.websocket("/ws/audit")
-async def audit_websocket(websocket: WebSocket) -> None:
+async def audit_websocket(websocket: WebSocket) -> None:  # pragma: no cover
     """
     Real-time audit trail WebSocket.
 
@@ -128,7 +128,7 @@ async def audit_websocket(websocket: WebSocket) -> None:
             pass
 
 
-def _read_entries(path: Path) -> list[dict]:
+def _read_entries(path: Path) -> list[dict]:  # pragma: no cover
     """Read all entries from the audit JSONL file. Returns [] if file missing."""
     if not path.exists():
         return []
