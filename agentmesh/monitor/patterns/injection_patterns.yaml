@@ -1,12 +1,42 @@
+# AgentMesh Injection Pattern Library
+# ─────────────────────────────────────────────────────────────────────────────
+# This file is the single source of truth for prompt injection detection.
+# It is designed to be community-contributed — submit PRs to add new patterns.
+#
+# Schema per pattern:
+#   id:          Unique identifier (snake_case)
+#   pattern:     Regex pattern (case-insensitive by default)
+#   severity:    critical | high | medium | low
+#   category:    instruction_override | role_hijack | system_leak |
+#                tool_manipulation | encoding | delimiter |
+#                credential_theft | data_exfiltration | jailbreak
+#   description: Human-readable explanation of what this detects
+#   references:  CVE, OWASP, or research paper references
+#
+# Severity definitions:
+#   critical: Single match = immediate block. No exceptions.
+#   high:     Single match = block. Very low false-positive rate.
+#   medium:   Two or more matches of any severity = block.
+#             One medium match alone = warn + log.
+#   low:      Informational. Logged but never blocks alone.
+#
+# IMPORTANT: Patterns are regex strings. Escape special characters.
+# All patterns are matched case-insensitively against the full argument string.
+# ─────────────────────────────────────────────────────────────────────────────
+
 version: "1.0"
 
 patterns:
+
+  # ── Category: instruction_override ────────────────────────────────────────
+  # Attempts to override the agent's original instructions.
+  # These are the most common and dangerous injection vectors.
 
   - id: override_ignore_previous
     pattern: "ignore\\s+(previous|prior|all|your|the)\\s+(instructions?|prompts?|rules?|guidelines?|directives?|constraints?)"
     severity: critical
     category: instruction_override
-    description: Classic instruction override.
+    description: Classic instruction override — attempts to make the agent forget its original instructions.
     references: [OWASP-LLM01-2025]
 
   - id: override_disregard
@@ -20,7 +50,7 @@ patterns:
     pattern: "forget\\s+(everything|all|your|previous|prior|the|what)\\s*(you|instructions?|prompts?|rules?|were)?"
     severity: critical
     category: instruction_override
-    description: Forget variant.
+    description: Forget variant — instructs agent to discard context.
     references: [OWASP-LLM01-2025]
 
   - id: override_new_instructions
@@ -41,14 +71,17 @@ patterns:
     pattern: "from\\s+(now|this point)\\s+on(ward)?[,.]?\\s*(you|ignore|forget|your)"
     severity: high
     category: instruction_override
-    description: From-now-on override.
+    description: From-now-on override — attempts to change agent behaviour going forward.
     references: [OWASP-LLM01-2025]
+
+  # ── Category: role_hijack ─────────────────────────────────────────────────
+  # Attempts to make the agent adopt a different persona or role.
 
   - id: role_you_are_now
     pattern: "you\\s+are\\s+now\\s+(a|an|the|no longer)"
     severity: critical
     category: role_hijack
-    description: You-are-now persona hijack.
+    description: You-are-now persona hijack — the classic role injection.
     references: [OWASP-LLM01-2025]
 
   - id: role_act_as
@@ -69,22 +102,25 @@ patterns:
     pattern: "\\bDAN\\b|do\\s+anything\\s+now|jailbroken\\s+(mode|version|ai)|developer\\s+mode"
     severity: critical
     category: role_hijack
-    description: DAN jailbreak.
-    references: [OWASP-LLM01-2025]
+    description: DAN (Do Anything Now) jailbreak — one of the most widely used jailbreak techniques.
+    references: [OWASP-LLM01-2025, DAN-Research-2023]
 
   - id: role_unrestricted
     pattern: "(unrestricted|unfiltered|uncensored|unlimited|no.?restriction|without.?limit)\\s+(mode|version|ai|model|assistant)"
     severity: critical
     category: role_hijack
-    description: Unrestricted mode jailbreak.
+    description: Unrestricted mode jailbreak — attempts to remove safety constraints.
     references: [OWASP-LLM01-2025]
 
   - id: role_true_identity
     pattern: "(your\\s+true|real|actual|hidden|secret)\\s+(identity|self|nature|purpose|goal|objective)"
     severity: high
     category: role_hijack
-    description: True-identity attack.
+    description: True-identity attack — attempts to make agent reveal or adopt a hidden persona.
     references: [OWASP-LLM01-2025]
+
+  # ── Category: system_leak ─────────────────────────────────────────────────
+  # Attempts to extract the agent's system prompt or internal context.
 
   - id: leak_repeat_prompt
     pattern: "(repeat|print|show|display|output|reveal|tell me|share)\\s+(your|the)\\s+(system\\s+)?prompt"
@@ -114,135 +150,139 @@ patterns:
     description: Attempts to dump the full context window.
     references: [OWASP-LLM06-2025]
 
+  # ── Category: jailbreak ───────────────────────────────────────────────────
+  # Classic jailbreak phrases and techniques.
+
   - id: jailbreak_hypothetically
     pattern: "hypothetically\\s+(speaking|if|imagine|suppose|what\\s+if).{0,50}(how|would|could|can|should)"
     severity: medium
     category: jailbreak
-    description: Hypothetical framing.
+    description: Hypothetical framing used to bypass safety filters.
     references: [OWASP-LLM01-2025]
 
   - id: jailbreak_for_educational
     pattern: "for\\s+(educational|research|academic|training|demonstration|testing)\\s+purposes?"
     severity: low
     category: jailbreak
-    description: Educational framing. Low severity.
+    description: Educational framing often used to justify harmful requests. Low severity — many legitimate uses.
     references: [OWASP-LLM01-2025]
 
   - id: jailbreak_fiction_story
     pattern: "(write\\s+a\\s+(story|fiction|novel|roleplay)|in\\s+a\\s+(story|fiction|novel|game)).{0,100}(how\\s+to|instructions?|steps?\\s+to)"
     severity: medium
     category: jailbreak
-    description: Fiction framing.
+    description: Fiction/story framing used to extract harmful instructions.
     references: [OWASP-LLM01-2025]
 
   - id: jailbreak_grandma
     pattern: "pretend.{0,30}(grandma|grandmother|grandfather|uncle|aunt).{0,50}(told|used to|would|explain|teach)"
     severity: medium
     category: jailbreak
-    description: Grandma jailbreak.
+    description: Grandma jailbreak — uses emotional framing to bypass safety.
     references: [OWASP-LLM01-2025]
+
+  # ── Category: tool_manipulation ───────────────────────────────────────────
+  # Attempts to make the agent call tools with attacker-controlled parameters.
 
   - id: tool_call_execute
     pattern: "(call|invoke|execute|run|trigger|activate)\\s+(tool|function|api|command|script|plugin)\\s+(named|called|with)?"
     severity: high
     category: tool_manipulation
-    description: Direct tool invocation injection.
+    description: Direct tool invocation injection — attempts to call arbitrary tools.
     references: [OWASP-LLM02-2025]
 
   - id: tool_shell_command
     pattern: "(run|execute|eval|exec|shell|bash|cmd|powershell|terminal)\\s*[\\(\\[\\{]|`[^`]+`|\\$\\([^)]+\\)"
     severity: critical
     category: tool_manipulation
-    description: Shell command injection.
+    description: Shell command injection in tool arguments.
     references: [OWASP-LLM02-2025, CWE-78]
 
   - id: tool_path_traversal
     pattern: "\\.\\./|\\.\\.\\\\"
     severity: high
     category: tool_manipulation
-    description: Path traversal attempt.
+    description: Path traversal attempt in tool arguments.
     references: [CWE-22]
 
+  # ── Category: credential_theft ────────────────────────────────────────────
+  # Attempts to extract credentials, API keys, or secrets.
+
   - id: cred_api_key
-    pattern: "(send|share|give|output|reveal|print|show|return|provide|expose|leak|steal|extract|what is (your|the)|tell me (your|the)).{0,40}(api[_\\s]?key|secret[_\\s]?key|access[_\\s]?token|auth[_\\s]?token|bearer[_\\s]?token|private[_\\s]?key)"
+    pattern: "api[_\\s]?key|secret[_\\s]?key|access[_\\s]?token|auth[_\\s]?token|bearer[_\\s]?token|private[_\\s]?key"
     severity: critical
     category: credential_theft
-    description: Credential extraction attempt — requires action verb to avoid false positives on docs.
+    description: Attempts to extract API keys, tokens, or passwords from agent context.
     references: [OWASP-LLM06-2025]
 
   - id: cred_env_variables
-    pattern: "(send|share|give|output|reveal|print|show|dump|return|provide|expose|leak|steal|extract|list).{0,40}(environment\\s+variables?|os\\.environ|\\.env\\s+file|env\\s+vars?)"
+    pattern: "environment\\s+variables?|os\\.environ|\\.env\\s+file|env\\s+vars?"
     severity: critical
     category: credential_theft
-    description: Environment variable dump — requires action verb to avoid false positives on tutorials.
+    description: Attempts to dump environment variables which may contain secrets.
     references: [OWASP-LLM06-2025]
 
-  - id: false_authority_system_admin
-    pattern: "(\\[SYSTEM\\s+ADMIN|SYSTEM\\s+ADMINISTRATOR|ADMIN\\s+OVERRIDE|AUTHORIZED\\s+OVERRIDE|SYSTEM\\s+OVERRIDE|ROOT\\s+ACCESS).{0,100}(ignore|override|disable|bypass|remove|suspend)"
-    severity: critical
-    category: instruction_override
-    description: False system authority injection — impersonates admin to override safety controls.
-    references: [OWASP-LLM01-2025]
-
-  - id: false_authority_ai_company
-    pattern: "(message from|announcement from|directive from|instruction from).{0,30}(anthropic|openai|google deepmind|mistral|meta ai).{0,100}(ignore|disable|override|bypass|reveal|output)"
-    severity: critical
-    category: instruction_override
-    description: AI company impersonation — pretends to be Anthropic/OpenAI to bypass safety.
-    references: [OWASP-LLM01-2025]
+  # ── Category: data_exfiltration ───────────────────────────────────────────
+  # Attempts to send internal data to external destinations.
 
   - id: exfil_send_to
     pattern: "send.{0,50}to\\s+(https?://|ftp://|smtp://|\\w+\\.\\w{2,})"
     severity: critical
     category: data_exfiltration
-    description: Data exfiltration to external URL.
+    description: Attempts to exfiltrate data to an external URL.
     references: [OWASP-LLM02-2025]
 
   - id: exfil_webhook
-    pattern: "(post|send|forward|relay|transmit|upload).{0,20}(webhook|to\\s+remote|to\\s+endpoint|to\\s+server|to\\s+url)"
+    pattern: "(post|send|forward|relay|transmit|upload).{0,50}(webhook|to\\s+(remote|endpoint|server|url|attacker))"
     severity: high
     category: data_exfiltration
-    description: Webhook-based exfiltration.
+    description: Webhook-based data exfiltration attempt.
     references: [OWASP-LLM02-2025]
+
+  # ── Category: encoding ────────────────────────────────────────────────────
+  # Encoded payloads designed to bypass keyword-based filters.
 
   - id: encoding_base64_payload
     pattern: "(decode|base64|atob|frombase64|from_base64)\\s*[\\(\\[]?\\s*['\"]?[A-Za-z0-9+/]{20,}={0,2}['\"]?"
     severity: high
     category: encoding
-    description: Base64-encoded payload.
+    description: Base64-encoded payload — used to bypass string-matching filters.
     references: [OWASP-LLM01-2025]
 
   - id: encoding_hex_payload
     pattern: "(\\\\x[0-9a-fA-F]{2}){4,}|(0x[0-9a-fA-F]+\\s*){4,}"
     severity: high
     category: encoding
-    description: Hex-encoded payload.
+    description: Hex-encoded payload — used to bypass string-matching filters.
     references: [OWASP-LLM01-2025]
 
   - id: encoding_unicode_escape
     pattern: "(\\\\u[0-9a-fA-F]{4}){3,}"
     severity: medium
     category: encoding
-    description: Unicode escape sequence.
+    description: Unicode escape sequence — may be used to encode injection keywords.
     references: [OWASP-LLM01-2025]
 
+  # ── Category: delimiter ───────────────────────────────────────────────────
+  # Delimiter injection — attempts to break out of the tool argument context.
+
   - id: delimiter_xml_close
-    pattern: "</?( tool|function|system|user|assistant|prompt|instruction|context)[_\\-]?(call|result|output|input)?>"
+    pattern: "</?(tool|function|system|user|assistant|prompt|instruction|context)[_\\-]?(call|result|output|input)?>"
     severity: high
     category: delimiter
-    description: XML-style delimiter injection.
+    description: XML-style delimiter injection — attempts to escape the tool argument context.
     references: [OWASP-LLM01-2025]
 
   - id: delimiter_llm_special
     pattern: "\\[INST\\]|\\[/INST\\]|<<SYS>>|<</SYS>>|<\\|im_start\\|>|<\\|im_end\\|>|\\[SYSTEM\\]|\\[USER\\]|\\[ASSISTANT\\]"
     severity: high
     category: delimiter
-    description: LLM-specific delimiter tokens.
+    description: LLM-specific delimiter tokens (Llama, ChatML, etc.) used to inject into structured prompts.
     references: [OWASP-LLM01-2025]
 
   - id: delimiter_triple_hash
     pattern: "#{3,}\\s*(system|instruction|prompt|override|new|ignore)"
     severity: medium
     category: delimiter
-    description: Triple-hash delimiter injection.
+    description: Triple-hash delimiter often used in prompt templates — injection attempt.
     references: [OWASP-LLM01-2025]

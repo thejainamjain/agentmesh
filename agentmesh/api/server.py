@@ -74,11 +74,13 @@ def create_app(
     from agentmesh.api.routes.identity import router as identity_router
     from agentmesh.api.routes.policy import router as policy_router
     from agentmesh.api.routes.ws import router as ws_router
+    from agentmesh.api.routes.attack import router as attack_router
 
     app.include_router(health_router)
     app.include_router(identity_router)
     app.include_router(policy_router)
     app.include_router(ws_router)
+    app.include_router(attack_router)
 
     @app.exception_handler(Exception)
     async def global_error_handler(request: Request, exc: Exception) -> JSONResponse:
