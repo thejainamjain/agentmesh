@@ -124,12 +124,3 @@ Best contributions in priority order:
 4. **Audit backends** — PostgreSQL, S3 implementing the `AuditBackend` interface
 5. **Policy templates** — YAML examples for specific industries (HIPAA, fintech, etc.)
 
----
-
-## Security Vulnerability Reporting
-
-Do **not** open a public GitHub issue for security vulnerabilities.
-
-Email: security@agentmesh.dev
-
-We will respond within 48 hours and coordinate disclosure before any public fix.
